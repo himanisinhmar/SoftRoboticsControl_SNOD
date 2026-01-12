@@ -79,7 +79,7 @@ class TiltConfig:
 @dataclass
 class RunSettings:
     dt: float = 0.0005
-    duration: float = 60.0
+    duration: float = 20.0
     fast_substeps: int = 10
     z_spike_thr: float = 0.25
     # optional animation knobs (used by run_and_visualize)
@@ -409,14 +409,26 @@ def run_and_visualize(config: SimulationConfig, snapshot_times: Optional[Sequenc
     res = simulate_snod(config)
 
     run = config.run
-    anim_kwargs = animation_kwargs or {}
+    anim_kwargs = dict(animation_kwargs or {})
     if run.animate:
+        fast_save = bool(anim_kwargs.pop("fast_save", False))
+        if fast_save:
+            anim_kwargs.setdefault("render_every", 10)
+            anim_kwargs.setdefault("downsample_ts", 3)
+            anim_kwargs.setdefault("dpi", 100)
+            anim_kwargs.setdefault("preset", "ultrafast")
+            anim_kwargs.setdefault("crf", 28)
+            anim_kwargs.setdefault("max_frames", 400)
+        show_every = anim_kwargs.pop("show_every", run.animate_show_every)
+        render_every = anim_kwargs.pop("render_every", run.animate_render_every)
+        save_path = anim_kwargs.pop("save_path", run.animate_save_path)
+        fps = anim_kwargs.pop("fps", run.animate_fps)
         animate_modules(
             res, config.geometry, run.dt,
-            show_every=run.animate_show_every,
-            render_every=run.animate_render_every,
-            save_path=run.animate_save_path,
-            fps=run.animate_fps,
+            show_every=show_every,
+            render_every=render_every,
+            save_path=save_path,
+            fps=fps,
             **anim_kwargs
         )
 
@@ -453,6 +465,7 @@ def animate_modules(results: SimulationResult, geom: GeometryConfig, dt: float,
                     fps: int = 30, blit: bool = True, render_every: Optional[int] = None,
                     dpi: int = 120, codec: str = "libx264", crf: int = 23,
                     preset: str = "veryfast", downsample_ts: int = 1,
+                    max_frames: Optional[int] = None,
                     z_title: Optional[str] = None):
     """Optimized animated viewer for the chain; same visual as the original code."""
     time = results.time
@@ -537,6 +550,11 @@ def animate_modules(results: SimulationResult, geom: GeometryConfig, dt: float,
     plt.tight_layout()
     if render_every is None:
         render_every = show_every
+    if max_frames is not None and max_frames > 0:
+        est_frames = max(1, int(np.ceil(len(time) / render_every)))
+        if est_frames > max_frames:
+            scale = int(np.ceil(est_frames / max_frames))
+            render_every = max(1, render_every * scale)
     frame_indices = list(range(0, len(time), render_every))
     if frame_indices[-1] != len(time) - 1:
         frame_indices.append(len(time) - 1)
@@ -755,4 +773,9 @@ if __name__ == "__main__":
     cfg = SimulationConfig(geometry=geom, dynamics=dyn, sensing=sensing, tilt=tilt, run=run)
 
     # snapshots = []
-    run_and_visualize(cfg, snapshot_times=None, overlay_only=False)
+    run_and_visualize(cfg, snapshot_times=None, 
+                      overlay_only=False, 
+                      animation_kwargs={"save_path": "snod_run.mp4",
+                                        "fps": 30,
+                                        "fast_save": True,}
+)
